@@ -1,0 +1,5 @@
+setuptools==68.2.2
+pynetbox==7.2.0
+colorama==0.4.6
+paramiko==3.3.1
+prettytable==3.9.0
