@@ -3,3 +3,4 @@
 ```
 .\custom_modules> pip install -e .
 ```
+* `snmp.py` module is not installable. Copy it with `oid` directory to your project
