@@ -139,9 +139,12 @@ class NetboxDevice:
         self.__vlans = vlans
         self.__ip_address = ip_address
         self.__vm = vm
-        self.__cluster = cluster
         self.__netbox_device_role = None
+        self.__cluster_name = cluster
         
+        # Если есть кластер, получаем его объект из NetBox
+        if cluster:
+            self.__get_netbox_cluster()
         # Получение объекта сайта из NetBox
         self.__netbox_site = self.netbox_connection.dcim.sites.get(
             slug=self.__site_slug)
@@ -169,13 +172,14 @@ class NetboxDevice:
             logger.debug(
                 f'Virtual machine {self.__ip_address} not found in NetBox'
             )
-            netbox_device = self.netbox_connection.dcim.devices.get(
-                name=self.__ip_address
-            )
-            if netbox_device:
-                raise Error(
-                    f'There is device with IP address {self.__ip_address} in NetBox'
+            if self.__ip_address:
+                netbox_device = self.netbox_connection.dcim.devices.get(
+                    name=self.__ip_address
                 )
+                if netbox_device:
+                    raise Error(
+                        f'There is device with IP address {self.__ip_address} in NetBox'
+                    )
             logger.info(
                 f'Creating virtual machine {self.__ip_address} in NetBox...'
             )
@@ -183,7 +187,7 @@ class NetboxDevice:
                 name=self.hostname,
                 site=self.__netbox_site.id,
                 status="active",
-                cluster=self.__cluster,
+                cluster=self.__netbox_cluster.id if hasattr(self, '__netbox_cluster') else None,
             )
         return self.__netbox_device
     
@@ -193,7 +197,7 @@ class NetboxDevice:
         return device
 
     def __check_serial_number(self):
-        if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
+        if self.__serial_number and hasattr(self.__netbox_device, 'serial') and self.__netbox_device.serial != self.__serial_number:
             self.__netbox_device.serial = self.__serial_number
             self.__netbox_device.save()
             logger.debug(
@@ -270,14 +274,14 @@ class NetboxDevice:
                 val = getattr(interface, field, None)
                 if val is not None:
                     setattr(self.__netbox_interface, field, val)
-
-            self.__netbox_interface.untagged_vlan = next(
-                (vlan for vlan in self.__vlans if str(vlan.vid) == interface.untagged), None)
-            self.__netbox_interface.tagged_vlans = [
-                vlan for vlan_id in interface.tagged or []
-                for vlan in self.__vlans
-                if str(vlan.vid) == vlan_id
-            ]
+            if hasattr(interface, 'untagged') or hasattr(interface, 'tagged'):
+                self.__netbox_interface.untagged_vlan = next(
+                    (vlan for vlan in self.__vlans if str(vlan.vid) == interface.untagged), None)
+                self.__netbox_interface.tagged_vlans = [
+                    vlan for vlan_id in interface.tagged or []
+                    for vlan in self.__vlans
+                    if str(vlan.vid) == vlan_id
+                ]
             self.__netbox_interface.save()
 
             if hasattr(interface, 'ip_with_prefix'):
@@ -456,3 +460,12 @@ class NetboxDevice:
     # Creating URL-friendly unique shorthand
     def __create_slug(self, name):
         return re.sub(r'\W+', '-', name).lower()
+
+    def __get_netbox_cluster(self):
+        self.__netbox_cluster = self.netbox_connection.virtualization.clusters.get(
+            name=self.__cluster_name
+        )
+        if not self.__netbox_cluster:
+            self.__netbox_cluster = self.netbox_connection.virtualization.clusters.create(
+                name=self.__cluster_name
+            )
