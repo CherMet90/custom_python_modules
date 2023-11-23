@@ -6,6 +6,7 @@ import traceback
 
 import pynetbox
 from colorama import init
+from transliterate import translit, get_available_language_codes
 
 from custom_modules.errors import Error, NonCriticalError
 from custom_modules.log import logger
@@ -444,7 +445,7 @@ class NetboxDevice:
                 )
                 recreate_cable()
 
-    def get_platform(self, csv_os):
+    def set_platform(self, csv_os):
         slug = self.__create_slug(csv_os)
         self.__platform = self.netbox_connection.dcim.platforms.get(
             slug=slug
@@ -457,9 +458,36 @@ class NetboxDevice:
         self.__netbox_device.platform = self.__platform
         self.__netbox_device.save()
 
+    def set_tenant(self, csv_user, vm_name):
+        slug = self.__create_slug(csv_user)
+        self.__tenant = self.netbox_connection.tenancy.tenants.get(
+            slug=slug
+        )
+        try:
+            if not self.__tenant:
+                self.__tenant = self.netbox_connection.tenancy.tenants.create(
+                    name=csv_user,
+                    slug=slug,
+                )
+        except pynetbox.core.query.RequestError as e:
+            NonCriticalError(
+                e, vm_name
+            )
+            return
+        self.__netbox_device.tenant = self.__tenant
+        self.__netbox_device.save()
+    
     # Creating URL-friendly unique shorthand
     def __create_slug(self, name):
-        return re.sub(r'\W+', '-', name).lower()
+        # Check if name contains non-Latin characters
+        if not re.match(r'^[\x00-\x7F]+$', name):
+            # Transliterate non-Latin characters
+            # assuming the input could be in various languages.
+            for language_code in get_available_language_codes():
+                name = translit(name, language_code, reversed=True)
+        # Replace non-word characters with hyphens and convert to lowercase
+        slug = re.sub(r'\W+', '-', name).lower()
+        return slug
 
     def __get_netbox_cluster(self):
         self.__netbox_cluster = self.netbox_connection.virtualization.clusters.get(

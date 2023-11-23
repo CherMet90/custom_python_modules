@@ -13,7 +13,7 @@ class Error(Exception):
 
     @classmethod
     def store_error(cls, ip, message):
-        cls.error_messages.append({ip: message})
+        cls.error_messages.append({ip: str(message)})
 
 
 class NonCriticalError(Error):
