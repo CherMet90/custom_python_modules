@@ -10,7 +10,7 @@ import oid.general
 from custom_modules.errors import Error, NonCriticalError
 from custom_modules.log import logger
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
 class RegexAction:
@@ -94,7 +94,7 @@ class SNMPDevice:
         ip_address = ip_address or self.ip_address
 
         try:
-            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, f"-On{'x' if hex else ''}",
+            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, "-Cc", f"-On{'x' if hex else ''}",
                        *([custom_option] if custom_option else []), ip_address, *([input_oid] if input_oid else [])]
 
             result = subprocess.run(
@@ -118,7 +118,7 @@ class SNMPDevice:
                     lambda re_out: re_out.group(1)
                 ),
                 'DotSplit': RegexAction(
-                    r'"([A-Za-z0-9\-_]+)(\.|\")',
+                    r'"([A-Za-z0-9\-_\-]+)(\\n)?\b',
                     lambda re_out: re_out.group(1)
                 ),
                 'IP': RegexAction(
@@ -232,12 +232,12 @@ class SNMPDevice:
         logger.info('Getting model from SNMP...')
         
         model, model_alternative = oid.general.model, oid.general.alt_model 
-        regexp_primary, regexp_alternative = r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', r'MN:(\S+)'
+        regexp_primary, regexp_apc, regexp_zap = r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', r'MN:(\S+)', r'(\b[A-Za-z]{3}\d{2,}[-\w\d]*\b)'
 
         for mod in [model, model_alternative]:
             value = self.snmpwalk(mod)
             if value:
-                for regex in [regexp_primary, regexp_alternative]:
+                for regex in [regexp_primary, regexp_apc, regexp_zap]:
                     result = re.search(regex, value[0])
                     if result:
                         self.model = result.group(1)
@@ -312,11 +312,11 @@ class SNMPDevice:
                         lldp_data_by_index[int_index] = lldp_data
             return lldp_data_by_index
 
-        def get_snmp_data(oid, data_type, hex_output=False):
+        def get_snmp_data(oid, data_type, hex_output=False, custom_option=None):
             """
             Get SNMP data using specified OIDs, data type, and optional hex_output.
             """
-            output = self.snmpwalk(oid, typeSNMP=data_type, hex=hex_output)
+            output = self.snmpwalk(oid, typeSNMP=data_type, hex=hex_output, custom_option=custom_option)
             cleaned_output = ([index, value]
                               for index, value in output if value != '')
             return self.__indexes_to_dict(cleaned_output)

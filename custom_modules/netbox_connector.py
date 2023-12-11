@@ -456,10 +456,15 @@ class NetboxDevice:
             slug=slug
         )
         if not self.__platform:
-            self.__platform = self.netbox_connection.dcim.platforms.create(
-                name=csv_os,
-                slug=slug,
-            )
+            try:
+                self.__platform = self.netbox_connection.dcim.platforms.create(
+                    name=csv_os,
+                    slug=slug,
+                )
+            except pynetbox.core.query.RequestError as e:
+                raise Error(
+                    e, self.__ip_address
+                )
         self.__netbox_device.platform = self.__platform
         self.__netbox_device.save()
 
