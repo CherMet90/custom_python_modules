@@ -10,7 +10,7 @@ import oid.general
 from custom_modules.errors import Error, NonCriticalError
 from custom_modules.log import logger
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
 class RegexAction:
@@ -229,6 +229,18 @@ class SNMPDevice:
         return self.hostname
 
     def get_model(self):
+        def process_model(model):
+            # Список исключений
+            exclusions = [
+                r'(AW24)-\d{6}',  # DIGI AW24-XXXXXX
+            ]
+            # Проверка на наличие исключений
+            for pattern in exclusions:
+                match = re.match(pattern, model)
+                if match:
+                    return match.group(1)
+            return model
+
         logger.info('Getting model from SNMP...')
         
         model, model_alternative = oid.general.model, oid.general.alt_model 
@@ -240,10 +252,10 @@ class SNMPDevice:
                 for regex in [regexp_primary, regexp_apc, regexp_zap]:
                     result = re.search(regex, value[0])
                     if result:
-                        self.model = result.group(1)
+                        self.model = process_model(result.group(1))
                         return self.model
                 if mod == model_alternative:
-                    self.model = next((i for i in value if i), None)
+                    self.model = process_model(next((i for i in value if i), None))
                     if self.model: return self.model
         
         raise Error("Model is undefined")
