@@ -135,6 +135,12 @@ class NetboxDevice:
                 role_id=role.id
             )
 
+    @classmethod
+    def get_services_by_vm(cls, vm):
+        return cls.netbox_connection.ipam.services.filter(
+            virtual_machine=vm.name
+        )
+    
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
         self.hostname = hostname
