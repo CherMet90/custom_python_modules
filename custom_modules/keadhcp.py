@@ -8,21 +8,31 @@ disable_warnings(category=InsecureRequestWarning)
 
 
 class KeaDHCP:
-    session = requests.Session()
-    session.verify = False
-    last_response = None
+    def __init__(self, ip, port):
+        self.session = requests.Session()
+        self.session.verify = False
+        self.last_response = None
+        self.url = f"http://{ip}:{port}"
+        self.config = self.__get_config()
+        self.static_list = []
+        self.pool_list = []
 
-    # Метод задаёт IP и порт для подключения к Kea-агенту
-    @classmethod
-    def set_kea_agent_address(cls, ip, port):
-        cls.url = f"http://{ip}:{port}"
+    def __get_config(self):
+        data = {
+            "command": "config-get",
+            "service": ['dhcp4'],
+        }
+        response = self.__post(data)
+        if response and response[0]["result"] == 0:
+            return response[0].get('arguments', {}).get('Dhcp4', {})
+        else:
+            return {}
     
-    @classmethod
-    def post(cls, data):
+    def __post(self, data):
         try:
             print(f"Отправка команды: {data.get('command', '')}")
-            response = cls.session.post(cls.url, json=data, verify=False)
-            cls.last_response = response
+            response = self.session.post(self.url, json=data, verify=False)
+            self.last_response = response
             if response.status_code == 200:
                 response_data = response.json()
                 # Выводим описание ответа, если оно доступно
@@ -39,8 +49,7 @@ class KeaDHCP:
             print(f"Произошла ошибка: {e}")
             return None
 
-    @classmethod
-    def lease_add(cls, ip, mac, subnet_id=0):
+    def lease_add(self, ip, mac, subnet_id=0):
         data = {
             "command": "lease4-add",
             "arguments": {
@@ -50,10 +59,9 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def lease_del_by_ip(cls, ip):
+    def lease_del_by_ip(self, ip):
         data = {
             "command": "lease4-del",
             "arguments": {
@@ -61,10 +69,9 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def lease_del_by_mac(cls, mac, subnet_id=0):
+    def lease_del_by_mac(self, mac, subnet_id=0):
         data = {
             "command": "lease4-del",
             "arguments": {
@@ -74,10 +81,9 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def lease_update(cls, ip, mac, hostname="", subnet_id=0, force_create=True):
+    def lease_update(self, ip, mac, hostname="", subnet_id=0, force_create=True):
         data = {
             "command": "lease4-update",
             "arguments": {
@@ -89,28 +95,13 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def config_get(cls):
-        data = {
-            "command": "config-get",
-            "service": ['dhcp4'],
-        }
-        response = cls.post(data)
-        if response and response[0]["result"] == 0:
-            return response[0].get('arguments', {}).get('Dhcp4', {})
-        else:
-            return {}
+    def get_subnets(self):
+        return self.config.get('subnet4', [])
 
-    @classmethod
-    def get_subnets(cls):
-        config = cls.config_get()
-        return config.get('subnet4', [])
-
-    @classmethod
-    def find_subnet_id(cls, subnet_pattern):
-        subnets = cls.get_subnets()
+    def find_subnet_id(self, subnet_pattern):
+        subnets = self.get_subnets()
         found_subnet = [
             {'subnet': subnet.get('subnet'), 'id': subnet.get('id')}
             for subnet in subnets if subnet_pattern in subnet.get('subnet')
@@ -118,18 +109,16 @@ class KeaDHCP:
         for subnet in found_subnet:
             print(f"ID: {subnet.get('id')} | Подсеть: {subnet.get('subnet')}")
 
-    @classmethod
-    def lease_get_all(cls):
+    def lease_get_all(self):
         data = {
             "command": "lease4-get-all",
             "service": ['dhcp4'],
         }
-        response = cls.post(data)
+        response = self.__post(data)
         return response[0].get('arguments', {}).get('leases', []) if response else []
 
-    @classmethod
-    def find_leases_with_empty_mac(cls):
-        leases = cls.lease_get_all()
+    def find_leases_with_empty_mac(self):
+        leases = self.lease_get_all()
         found_leases = [lease for lease in leases if lease['hw-address'] == '']
         for lease in found_leases:
             cltt = datetime.datetime.fromtimestamp(lease['cltt']).strftime('%Y.%m.%d %H:%M:%S')
@@ -142,9 +131,8 @@ class KeaDHCP:
         if not found_leases:
             print("Аренды по c пустым MAC не найдены!")
 
-    @classmethod
-    def del_leases_with_empty_mac(cls):
-        leases = cls.lease_get_all()
+    def del_leases_with_empty_mac(self):
+        leases = self.lease_get_all()
         found_leases = [lease for lease in leases if lease['hw-address'] == '']
         for lease in found_leases:
             cltt = datetime.datetime.fromtimestamp(lease['cltt']).strftime('%Y.%m.%d %H:%M:%S')
@@ -154,13 +142,12 @@ class KeaDHCP:
                   f"CLTT: {cltt},\t"
                   f"Valid LFT: {lease['valid-lft']},\t"
                   f"Hostname: '{lease['hostname']}'")
-            cls.lease_del_by_ip(lease['ip-address'])
+            self.lease_del_by_ip(lease['ip-address'])
         if not found_leases:
             print("Аренды по c пустым MAC не найдены!")
 
-    @classmethod
-    def find_leases_by_pattern(cls, pattern):
-        leases = cls.lease_get_all()
+    def find_leases_by_pattern(self, pattern):
+        leases = self.lease_get_all()
         found_leases = [lease for lease in leases if
                         pattern in lease.get('ip-address') or pattern in lease.get('hw-address')]
         for lease in found_leases:
@@ -174,8 +161,7 @@ class KeaDHCP:
         if not found_leases:
             print("Аренды по шаблону не найдены!")
 
-    @classmethod
-    def lease_write(cls, filename='/tmp/lease_file.csv'):
+    def lease_write(self, filename='/tmp/lease_file.csv'):
         data = {
             "command": "lease4-write",
             "arguments": {
@@ -183,10 +169,9 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def lease_wipe(cls, subnet_id):
+    def lease_wipe(self, subnet_id):
         data = {
             "command": "lease4-wipe",
             "arguments": {
@@ -194,32 +179,29 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def list_commands(cls):
+    def list_commands(self):
         data = {
             "command": "list-commands",
             "arguments": {
             },
             "service": ['dhcp4'],
         }
-        response = cls.post(data)
+        response = self.__post(data)
         if response:
             print("Список доступных команд:")
             for command in response[0].get('arguments', []):
                 print(command)
 
-    @classmethod
-    def version_get(cls):
+    def version_get(self):
         data = {
             "command": "version-get",
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def dhcp_enable(cls):
+    def dhcp_enable(self):
         data = {
             "command": "dhcp-enable",
             "arguments": {
@@ -227,10 +209,9 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
 
-    @classmethod
-    def dhcp_disable(cls):
+    def dhcp_disable(self):
         data = {
             "command": "dhcp-disable",
             "arguments": {
@@ -238,4 +219,27 @@ class KeaDHCP:
             },
             "service": ['dhcp4'],
         }
-        cls.post(data)
+        self.__post(data)
+
+    def static_get_all(self):
+        for subnet in self.config.get('subnet4', []):
+            for static in subnet.get('reservations', []):
+                self.static_list.append({
+                    'ip-address': static.get('ip-address'),
+                    'hw-address': static.get('hw-address'),
+                    'subnet-id': subnet.get('id'),
+                    'valid-lft': subnet.get("valid-lifetime"),
+                    'hostname': static.get('hostname'),
+                    'boot-file-name': static.get('boot-file-name'),
+                    'client-classes': static.get('client-classes'),
+                    'option-data': static.get('option-data'),
+                    'server-hostname': static.get('server-hostname'),
+                    'next-server': static.get('next-server'),
+                })
+        return self.static_list
+
+    def get_pools(self):
+        for subnet in self.config.get('subnet4', []):
+            for pool in subnet.get('pools', []):
+                self.pool_list.append(pool.get('pool'))
+        return self.pool_list

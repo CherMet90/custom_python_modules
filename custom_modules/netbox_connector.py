@@ -104,7 +104,7 @@ class NetboxDevice:
             logger.debug(
                 f'IP address {ip_with_prefix} already exists in NetBox (skipping creation, update only)')
             for existing_ip in existing_ips:
-                if description and description != existing_ip.description:
+                if description and (description != existing_ip.description or status != existing_ip.status):
                     logger.info(f'Updating IP address {ip_with_prefix}...')
                     existing_ip.description = description
                     existing_ip.status = status
@@ -140,7 +140,25 @@ class NetboxDevice:
         return cls.netbox_connection.ipam.services.filter(
             virtual_machine=vm.name
         )
-    
+
+    @classmethod
+    def remove_ip_range(cls, start_ip, end_ip):
+        start_ip = ipaddress.IPv4Address(start_ip)
+        end_ip = ipaddress.IPv4Address(end_ip)
+        ip_list = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_ip), int(end_ip) + 1)]
+        for ip in ip_list:
+            ip_no_prefix = ip.split('/')[0]
+            ip_obj = list(cls.netbox_connection.ipam.ip_addresses.filter(address=ip_no_prefix))
+            if len(ip_obj) == 1:
+                if ip_obj[0].assigned_object:
+                    ip_obj[0].status = 'dhcp'
+                    ip_obj[0].description = ''
+                    ip_obj[0].save()
+                    logger.debug(f'{ip_no_prefix} status set to DHCP')
+                else:
+                    ip_obj[0].delete()
+                    logger.debug(f'{ip_no_prefix} deleted')
+            
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
         self.hostname = hostname
@@ -513,3 +531,4 @@ class NetboxDevice:
             self.__netbox_cluster = self.netbox_connection.virtualization.clusters.create(
                 name=self.__cluster_name
             )
+            
