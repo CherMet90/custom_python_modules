@@ -23,4 +23,4 @@ def print_errors():
         for ip, error_message in merged_error_messages.items():
             table.add_row([ip, error_message])
 
-        print(table)
+        logger.error(f'\n{table}')

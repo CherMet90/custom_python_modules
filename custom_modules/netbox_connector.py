@@ -150,7 +150,7 @@ class NetboxDevice:
             ip_no_prefix = ip.split('/')[0]
             ip_obj = list(cls.netbox_connection.ipam.ip_addresses.filter(address=ip_no_prefix))
             if len(ip_obj) == 1:
-                if ip_obj[0].assigned_object:
+                if ip_obj[0].assigned_object or ip_obj[0].dns_name:
                     ip_obj[0].status = 'dhcp'
                     ip_obj[0].description = ''
                     ip_obj[0].save()
