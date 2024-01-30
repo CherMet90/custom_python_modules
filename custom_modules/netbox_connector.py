@@ -150,7 +150,7 @@ class NetboxDevice:
             ip_no_prefix = ip.split('/')[0]
             ip_obj = list(cls.netbox_connection.ipam.ip_addresses.filter(address=ip_no_prefix))
             if len(ip_obj) == 1:
-                if ip_obj[0].assigned_object:
+                if ip_obj[0].assigned_object or ip_obj[0].dns_name:
                     ip_obj[0].status = 'dhcp'
                     ip_obj[0].description = ''
                     ip_obj[0].save()
@@ -158,7 +158,23 @@ class NetboxDevice:
                 else:
                     ip_obj[0].delete()
                     logger.debug(f'{ip_no_prefix} deleted')
-            
+    
+    @classmethod
+    def get_netbox_objects(cls, *path_segments, action=None, **search_params):
+        netbox_api = cls.netbox_connection
+        # Flatten out dot-delimited string segments into individual segments
+        segments = []
+        for segment in path_segments:
+            segments.extend(segment.split('.'))
+        # Traverse the pynetbox API segments
+        for segment in segments:
+            netbox_api = getattr(netbox_api, segment)
+        if action:
+            method = getattr(netbox_api, action)
+            return method(**search_params)
+        else:
+            raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
+    
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
         self.hostname = hostname
