@@ -176,7 +176,7 @@ class NetboxDevice:
             raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
     
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
+    def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster_name=None, cluster_type=None, status='active', vcpus=None, mem=None, description=None) -> None:
         self.hostname = hostname
         self.__site_slug = site_slug
         self.__model = model
@@ -186,11 +186,13 @@ class NetboxDevice:
         self.__ip_address = ip_address
         self.__vm = vm
         self.__netbox_device_role = None
-        self.__cluster_name = cluster
+        self.__cluster_name = cluster_name
+        self.__cluster_type = cluster_type
+        self.__status = status
+        self.__vcpus = vcpus
+        self.__mem = mem
+        self.__description = description
         
-        # Если есть кластер, получаем его объект из NetBox
-        if cluster:
-            self.__get_netbox_cluster()
         # Получение объекта сайта из NetBox
         self.__netbox_site = self.netbox_connection.dcim.sites.get(
             slug=self.__site_slug)
@@ -203,9 +205,12 @@ class NetboxDevice:
         # Разрешить работу без роли для ВМ
         if not self.__netbox_device_role and not self.__vm:
             self.__critical_error_not_found("device role", self.__role)
+        # Если есть кластер, получаем его объект из NetBox
+        if self.__cluster_name and self.__cluster_type:
+            self.__get_netbox_cluster()
 
         # Создание/получение устройства или ВМ
-        self.__netbox_device = self.__get_or_create_netbox_vm() if vm else self.__get_netbox_device()
+        self.__netbox_device = self.__get_or_create_netbox_vm() if self.__vm else self.__get_netbox_device()
         
         # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
         self.__create_device() if not self.__netbox_device else self.__check_serial_number()
@@ -232,8 +237,11 @@ class NetboxDevice:
             self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.create(
                 name=self.hostname,
                 site=self.__netbox_site.id,
-                status="active",
-                cluster=self.__netbox_cluster.id if hasattr(self, '__netbox_cluster') else None,
+                status=self.__status,
+                vcpus=self.__vcpus,
+                memory=self.__mem,
+                cluster=self.__netbox_cluster.id,
+                comments=self.__description,
             )
         return self.__netbox_device
     
@@ -491,12 +499,12 @@ class NetboxDevice:
                 recreate_cable()
 
     def set_platform(self, csv_os):
-        slug = self.__create_slug(csv_os)
         self.__platform = self.netbox_connection.dcim.platforms.get(
-            slug=slug
+            name=csv_os
         )
         if not self.__platform:
             try:
+                slug = self.__create_slug(csv_os)
                 self.__platform = self.netbox_connection.dcim.platforms.create(
                     name=csv_os,
                     slug=slug,
@@ -509,21 +517,21 @@ class NetboxDevice:
         self.__netbox_device.save()
 
     def set_tenant(self, csv_user, vm_name):
-        slug = self.__create_slug(csv_user)
         self.__tenant = self.netbox_connection.tenancy.tenants.get(
-            slug=slug
+            name=csv_user,
         )
-        try:
-            if not self.__tenant:
+        if not self.__tenant:
+            try:
+                slug = self.__create_slug(csv_user)
                 self.__tenant = self.netbox_connection.tenancy.tenants.create(
                     name=csv_user,
                     slug=slug,
                 )
-        except pynetbox.core.query.RequestError as e:
-            NonCriticalError(
-                e, vm_name
-            )
-            return
+            except pynetbox.core.query.RequestError as e:
+                NonCriticalError(
+                    e, vm_name
+                )
+                return
         self.__netbox_device.tenant = self.__tenant
         self.__netbox_device.save()
     
@@ -544,7 +552,13 @@ class NetboxDevice:
             name=self.__cluster_name
         )
         if not self.__netbox_cluster:
+            self.__netbox_cluster_type = self.netbox_connection.virtualization.cluster_types.get(
+                name=self.__cluster_type
+            )
             self.__netbox_cluster = self.netbox_connection.virtualization.clusters.create(
-                name=self.__cluster_name
+                name=self.__cluster_name,
+                type=self.__netbox_cluster_type.id,
+                status="active",
+                site=self.__netbox_site.id,
             )
             
