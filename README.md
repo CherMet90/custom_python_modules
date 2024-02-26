@@ -1,4 +1,8 @@
 * Запустить терминал в корневой папке проекта
+* Установить библиотеки
+```
+pip install -r requirements.txt
+```
 * Выполнить команду из `commands.txt`
 ```
 .\custom_modules> pip install -e .
