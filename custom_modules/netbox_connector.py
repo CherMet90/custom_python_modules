@@ -210,30 +210,51 @@ class NetboxDevice:
             self.__get_netbox_cluster()
 
         # Создание/получение устройства или ВМ
-        self.__netbox_device = self.__get_or_create_netbox_vm() if self.__vm else self.__get_netbox_device()
+        self.__netbox_device = self.__create_or_update_netbox_vm() if self.__vm else self.__get_netbox_device()
         
         # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
         self.__create_device() if not self.__netbox_device else self.__check_serial_number()
 
-    def __get_or_create_netbox_vm(self):
+    def __create_or_update_netbox_vm(self):
         self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
-            name=self.hostname
+            name=self.hostname,
+            status="active"
         )
-        if not self.__netbox_device:
-            logger.debug(
-                f'Virtual machine {self.__ip_address} not found in NetBox'
-            )
+        if self.__netbox_device:
+            # Prepare data for updating
+            has_changes = False
+            fields_to_update = ['site', 'status', 'vcpus', 'memory', 'cluster', 'comments']
+            update_values = {
+                'site': self.__netbox_site.id,
+                'status': self.__status,
+                'vcpus': self.__vcpus,
+                'memory': self.__mem,
+                'cluster': self.__netbox_cluster.id,
+                'comments': self.__description,
+                # Add other fields as necessary
+            }
+
+            # Check for changes
+            for field in fields_to_update:
+                if str(getattr(self.__netbox_device, field, '')) != str(update_values[field]):
+                    setattr(self.__netbox_device, field, update_values[field])
+                    has_changes = True
+
+            if has_changes:
+                logger.info(f'Updating virtual machine {self.hostname} in NetBox...')
+                self.__netbox_device.save()
+            else:
+                logger.info(f'No updates required for virtual machine {self.hostname}.')
+        else:
+            logger.debug(f'Virtual machine {self.__ip_address} not found in NetBox')
             if self.__ip_address:
                 netbox_device = self.netbox_connection.dcim.devices.get(
                     name=self.__ip_address
                 )
                 if netbox_device:
-                    raise Error(
-                        f'There is device with IP address {self.__ip_address} in NetBox'
-                    )
-            logger.info(
-                f'Creating virtual machine {self.__ip_address} in NetBox...'
-            )
+                    raise Error(f'There is a device with IP address {self.__ip_address} in NetBox')
+
+            logger.info(f'Creating virtual machine {self.__ip_address} in NetBox...')
             self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.create(
                 name=self.hostname,
                 site=self.__netbox_site.id,
