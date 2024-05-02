@@ -217,8 +217,7 @@ class NetboxDevice:
 
     def __create_or_update_netbox_vm(self):
         self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
-            name=self.hostname,
-            status="active"
+            name=self.hostname
         )
         if self.__netbox_device:
             # Prepare data for updating
