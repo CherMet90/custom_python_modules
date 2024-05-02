@@ -227,7 +227,7 @@ class NetboxDevice:
         if len(self.__netbox_device) > 1:
             raise Error(f"{self.hostname}: found several VMs with the same name")
         elif len(self.__netbox_device) == 0:
-            raise Error(f"{self.hostname}: VM not found")
+            pass
         else:
             # Успешно найдена одна ВМ с точно совпадающим именем
             self.__netbox_device = self.__netbox_device[0]  # Выбираем первый (и единственный) элемент списка
