@@ -171,7 +171,11 @@ class NetboxDevice:
             netbox_api = getattr(netbox_api, segment)
         if action:
             method = getattr(netbox_api, action)
-            return method(**search_params)
+            try:
+                return method(**search_params)
+            except Exception as e:
+                Error(f"Failed to {action} NetBox object: {e}")
+                return None
         else:
             raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
     
@@ -254,7 +258,10 @@ class NetboxDevice:
 
             if has_changes:
                 logger.info(f'Updating virtual machine {self.hostname} in NetBox...')
-                self.__netbox_device.save()
+                try:
+                    self.__netbox_device.save()
+                except Exception as e:
+                    raise Error(f'Failed to update virtual machine {self.hostname} in NetBox.\n{e}', self.__ip_address)
             else:
                 logger.info(f'No updates required for virtual machine {self.hostname}.')
         else:
