@@ -7,10 +7,9 @@ from netaddr import IPAddress
 import oid.cisco_catalyst
 import oid.cisco_sg
 import oid.general
-from custom_modules.errors import Error, NonCriticalError
-from custom_modules.log import logger
+from errors import Error, NonCriticalError
+from log import logger
 
-__version__ = '1.2.0'
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
 class RegexAction:
@@ -65,11 +64,12 @@ class SNMPDevice:
 
         return cls.__indexes_to_dict(table_data)
 
-    def __init__(self, ip_address, community_string, arp_table=None):
+    def __init__(self, ip_address, community_string, arp_table=None, version='2c'):
         self.community_string = community_string
         self.ip_address = ip_address
         self.arp_table = arp_table
         self.model_family = None
+        self.version = version
 
         self.model_families = {
             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
@@ -94,7 +94,7 @@ class SNMPDevice:
         ip_address = ip_address or self.ip_address
 
         try:
-            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, "-Cc", f"-On{'x' if hex else ''}",
+            process = ["snmpwalk", "-Pe", "-v", f"{self.version}", "-c", community_string, "-Cc", f"-On{'x' if hex else ''}",
                        *([custom_option] if custom_option else []), ip_address, *([input_oid] if input_oid else [])]
 
             result = subprocess.run(
@@ -233,6 +233,7 @@ class SNMPDevice:
             # Список исключений
             exclusions = [
                 r'(AW24)-\d{6}',  # DIGI AW24-XXXXXX
+                r'WS-(\S+)',
             ]
             # Проверка на наличие исключений
             for pattern in exclusions:
@@ -242,18 +243,30 @@ class SNMPDevice:
             return model
 
         logger.info('Getting model from SNMP...')
-        
         model, model_alternative = oid.general.model, oid.general.alt_model 
-        regexp_primary, regexp_apc, regexp_zap = r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', r'MN:(\S+)', r'(\b[A-Za-z]{3}\d{2,}[-\w\d]*\b)'
+        regex_patterns = {
+            'regexp_apc': r'MN:(\S+)',
+            'regexp5': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
+            'regexp4': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
+            'regexp3': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]{1,6}+-[A-Z0-9\/]+\b)',
+            'regexp2': r'(\b[A-Z][A-Z0-9]{1,7}+-[A-Za-z0-9]{1,8}+\b)',
+            'regexp1': r'(\b[A-Z]{1,3}\d{2,}[A-Za-z0-9]+\b)'
+        }
+        ignore_patterns = [
+            "USW-XG", "IOS", "IE1000", "VMware", "C1000", "C2960L", "C2960RX", "C2960X", "C9300"
+        ]
 
+        # Выполняем snmpwalk для каждой модели
         for mod in [model, model_alternative]:
             value = self.snmpwalk(mod)
             if value:
-                for regex in [regexp_primary, regexp_apc, regexp_zap]:
-                    result = re.search(regex, value[0])
-                    if result:
-                        self.model = process_model(result.group(1))
-                        return self.model
+                # Проверяем каждое регулярное выражение на соответствие
+                for _, regex in regex_patterns.items():
+                    matches = re.findall(regex, value[0])
+                    for match in matches:
+                        if match not in ignore_patterns:
+                            self.model = process_model(match)
+                            return self.model
                 if mod == model_alternative:
                     self.model = process_model(next((i for i in value if i), None))
                     if self.model: return self.model
@@ -272,12 +285,20 @@ class SNMPDevice:
         masks = self.snmpwalk(oid.general.svi_masks, 'IP')
         indexes = self.snmpwalk(oid.general.svi_indexes, 'INT')
 
+        # Проверяем, содержат ли элементы таблицы si_int_name пустые значения
+        si_int_names = self.snmpwalk(oid.general.si_int_name)
+        use_alt_name = any(not name.strip() for name in si_int_names)
+
         SVIs = []
         for i, index in enumerate(indexes):
             if masks[i] == '0.0.0.0':
                 continue
 
-            name = self.snmpwalk(f"{oid.general.si_int_name}.{index}")
+            # Выбираем нужный OID для имени интерфейса
+            if use_alt_name:
+                name = self.snmpwalk(f"{oid.general.si_int_name_alt}.{index}")
+            else:
+                name = self.snmpwalk(f"{oid.general.si_int_name}.{index}")
             MTU = self.snmpwalk(f"{oid.general.si_mtu}.{index}", 'INT')
             MAC = self.snmpwalk(
                 f"{oid.general.si_mac}.{index}", 'MAC', hex=True)
@@ -343,7 +364,14 @@ class SNMPDevice:
         # ========================================================================
         logger.info('Getting physical interfaces...')
         
-        int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
+        # Проверяем, содержат ли элементы таблицы si_int_name пустые значения
+        si_int_names = self.snmpwalk(oid.general.si_int_name)
+        use_alt_name = any(not name.strip() for name in si_int_names)
+
+        if use_alt_name:
+            int_name_dict = get_snmp_data(oid.general.si_int_name_alt, 'INDEX-DESC')
+        else:
+            int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
         mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
         status_dict = get_snmp_data(oid.general.si_status, 'INDEX-INT')
         mac_dict = get_snmp_data(
