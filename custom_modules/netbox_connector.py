@@ -359,6 +359,34 @@ class NetboxDevice:
 
         self.__netbox_interface = existing_interface
 
+    def delete_interfaces(self):
+        """
+        Delete all interfaces of the current device in Netbox
+        """
+        if not self.__netbox_device:
+            raise Error("NetBox device not defined. Cannot delete interfaces.")
+
+        logger.info(f"Deleting all interfaces for device {self.__netbox_device.name}...")
+
+        # Получаем все интерфейсы устройства
+        if self.__vm:
+            interfaces = self.netbox_connection.virtualization.interfaces.filter(virtual_machine_id=self.__netbox_device.id)
+        else:
+            interfaces = self.netbox_connection.dcim.interfaces.filter(device_id=self.__netbox_device.id)
+
+        for interface in interfaces:
+            if interface.count_ipaddresses == 0:
+                logger.debug(f"Deleting interface {interface.name}...")
+                try:
+                    interface.delete()
+                except pynetbox.core.query.RequestError as e:
+                    error_message = f"Failed to delete interface {interface.name} for device {self.__netbox_device.name}\n{e}"
+                    NonCriticalError(error_message, interface.name, self.delete_interfaces.__name__)
+            else:
+                logger.debug(f"Skipping interface {interface.name} as it has associated IP addresses.")
+
+        logger.info(f"All unused interfaces for device {self.__netbox_device.name} have been deleted.")
+
     def add_interface(self, interface):
         self.__get_netbox_interface(interface)
 
@@ -379,16 +407,20 @@ class NetboxDevice:
             self.__netbox_interface.save()
 
             if hasattr(interface, 'ip_with_prefix'):
-                logger.debug(f"Interface {interface.name} has IP address")
-                self.__create_ip_address(interface)
+                logger.debug(f"Interface {interface.name} has IP addresses")
+                if isinstance(interface.ip_with_prefix, list):
+                    for ip_with_prefix in interface.ip_with_prefix:
+                        self.__create_ip_address(interface, ip_with_prefix)
+                else:
+                    self.__create_ip_address(interface, interface.ip_with_prefix)
 
-    def __create_ip_address(self, interface):
+    def __create_ip_address(self, interface, ip_with_prefix):
         try:
             def handle_existing_ip(existing_ip):
                 # Проверяем совпадает ли префикс у найденного в NetBox ip-адреса
-                if existing_ip.address == interface.ip_with_prefix:
+                if existing_ip.address == ip_with_prefix:
                     logger.debug(
-                        f"IP address {interface.ip_with_prefix} already exists")
+                        f"IP address {ip_with_prefix} already exists")
                     if self.__vm:
                         existing_ip.assigned_object_type = "virtualization.vminterface"
                     else:
@@ -408,26 +440,26 @@ class NetboxDevice:
 
             def create_new_ip():
                 logger.debug(
-                    f"Creating IP address {interface.ip_with_prefix}...")
+                    f"Creating IP address {ip_with_prefix}...")
                 if self.__vm:
                     return self.netbox_connection.ipam.ip_addresses.create(
-                        address=interface.ip_with_prefix,
+                        address=ip_with_prefix,
                         status="active",
                         assigned_object_type="virtualization.vminterface",
                         assigned_object_id=self.__netbox_interface.id,
                     )
                 else:
                     return self.netbox_connection.ipam.ip_addresses.create(
-                        address=interface.ip_with_prefix,
+                        address=ip_with_prefix,
                         status="active",
                         assigned_object_type="dcim.interface",
                         assigned_object_id=self.__netbox_interface.id,
                     )
 
             logger.debug(
-                f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
+                f"Checking if IP address {ip_with_prefix} already exists in NetBox...")
             existing_ips = list(self.netbox_connection.ipam.ip_addresses.filter(
-                address=interface.ip_address
+                address=ip_with_prefix
             ))
 
             if existing_ips:
@@ -436,19 +468,18 @@ class NetboxDevice:
             else:
                 create_new_ip()
 
-            if interface.ip_address == self.__ip_address:
-                if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
-                    logger.debug(
-                        f"Setting {interface.ip_address} as primary IP address")
-                    self.__netbox_device.primary_ip4 = {
-                        'address': interface.ip_with_prefix}
-                    self.__netbox_device.save()
+            if ip_with_prefix.split('/')[0] == self.__ip_address:
+                # if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
+                logger.debug(f"Setting {ip_with_prefix} as primary IP address")
+                self.__netbox_device.primary_ip4 = {
+                    'address': ip_with_prefix}
+                self.__netbox_device.save()
 
         except pynetbox.core.query.RequestError as e:
-            error_message = f"Request failed for IP address {interface.ip_with_prefix}\n{e}"
+            error_message = f"Request failed for IP address {ip_with_prefix}\n{e}"
             calling_function = inspect.stack()[1].function
             NonCriticalError(
-                error_message, interface.ip_with_prefix, calling_function)
+                error_message, ip_with_prefix, calling_function)
 
     def connect_to_neighbor(self, neighbor_device, interface):
         def recreate_cable():
