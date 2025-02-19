@@ -178,7 +178,37 @@ class NetboxDevice:
                 return None
         else:
             raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
-    
+
+    @classmethod
+    def update_ip_address(cls, ip_address, **kwargs):
+        """
+        Update IP address properties in Netbox.
+
+        Args:
+            ip_address (str): IP address to update
+            **kwargs: Properties to update (e.g., status, description, etc.)
+
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            prefix = cls.get_prefix_for_ip(ip_address)
+            ip_with_prefix = f'{ip_address}/{prefix.prefix.split("/")[1]}'
+            netbox_ip, _ = cls.get_netbox_ip(ip_with_prefix, create=False)
+
+            if netbox_ip:
+                for key, value in kwargs.items():
+                    setattr(netbox_ip, key, value)
+                netbox_ip.save()
+                logger.debug(f'Updated IP {ip_address} in Netbox: {kwargs}')
+                return True
+            else:
+                logger.warning(f'IP {ip_address} not found in Netbox. Skipping update.')
+                return False
+        except Exception as e:
+            logger.error(f'Error updating IP {ip_address} in Netbox: {e}')
+            return False
+
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster_name=None, cluster_type=None, status='active', vcpus=None, mem=None, description=None) -> None:
         self.hostname = hostname
