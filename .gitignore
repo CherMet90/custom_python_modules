@@ -2,3 +2,4 @@ custom_modules.egg-info/
 snmp_module/oid/__pycache__/
 custom_modules/__pycache__/
 app.log
+.vscode/launch.json
