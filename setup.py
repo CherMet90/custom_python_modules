@@ -16,6 +16,15 @@ setuptools.setup(
     packages=setuptools.find_packages (),
     
     # Dependencies/Other modules required for your package to work
-    install_requires=['pynetbox', 'colorama', 'paramiko', 'prettytable'],
+    install_requires=[
+    'setuptools==68.2.2',
+    'pynetbox==7.2.0',
+    'colorama==0.4.6',
+    'paramiko==3.3.1',
+    'prettytable==3.9.0',
+    'transliterate==1.10.2',
+    'ratelimit==2.2.1',
+    'backoff==2.2.1',
+    ],
  
 )
