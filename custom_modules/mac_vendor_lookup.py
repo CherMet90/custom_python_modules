@@ -52,6 +52,7 @@ class MacVendorLookup:
         # Check if MAC is already in cache
         vendor = self.cache.get(mac_address_prefix)
         if vendor:
+            logger.info(f'Using cached vendor for MAC {mac_address_prefix}: {vendor}')
             return vendor
 
         try:
