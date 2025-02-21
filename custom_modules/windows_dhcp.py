@@ -26,7 +26,7 @@ class WindowsDHCP:
             
             if process.returncode != 0:
                 raise NonCriticalError(
-                    f"Failed to execute PowerShell command: {command}"
+                    f"Failed to execute PowerShell command: {command}\n{stderr}"
                 )
             
             return stdout
