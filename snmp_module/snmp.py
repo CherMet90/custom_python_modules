@@ -246,31 +246,43 @@ class SNMPDevice:
         model, model_alternative = oid.general.model, oid.general.alt_model 
         regex_patterns = {
             'regexp_apc': r'MN:(\S+)',
-            'regexp5': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
-            'regexp4': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
-            'regexp3': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]{1,6}+-[A-Z0-9\/]+\b)',
-            'regexp2': r'(\b[A-Z][A-Z0-9]{1,7}+-[A-Za-z0-9]{1,8}+\b)',
+            'regexp6': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
+            'regexp5': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
+            'regexp4': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]{1,6}+-[A-Z0-9\/]+\b)',
+            'regexp3': r'(\b[A-Z][A-Z0-9]{1,7}+-[A-Za-z0-9]{1,8}+\b)',
+            'regexp2': r'(\b[A-Z0-9]{5}+-[A-Za-z0-9]{4}+\b)',
             'regexp1': r'(\b[A-Z]{1,3}\d{2,}[A-Za-z0-9]+\b)'
         }
         ignore_patterns = [
             "USW-XG", "IOS", "IE1000", "VMware", "C1000", "C2960L", "C2960RX", "C2960X", "C9300"
         ]
 
-        # Выполняем snmpwalk для каждой модели
-        for mod in [model, model_alternative]:
-            value = self.snmpwalk(mod)
-            if value:
-                # Проверяем каждое регулярное выражение на соответствие
-                for _, regex in regex_patterns.items():
-                    matches = re.findall(regex, value[0])
+        # Получаем и очищаем значения для обоих OID
+        model_values = [v for v in (self.snmpwalk(model) or []) if v and v.strip()]
+        alt_model_values = [v for v in (self.snmpwalk(model_alternative) or []) if v and v.strip()]
+
+        # ЭТАП 1: Поиск по регулярным выражениям для обоих OID
+        for values in [model_values, alt_model_values]:
+            if not values:
+                continue
+            
+            for value in values:
+                for regex in regex_patterns.values():
+                    matches = re.findall(regex, value)
                     for match in matches:
                         if match not in ignore_patterns:
                             self.model = process_model(match)
-                            return self.model
-                if mod == model_alternative:
-                    self.model = process_model(next((i for i in value if i), None))
-                    if self.model: return self.model
-        
+                            if self.model:
+                                return self.model
+
+        # ЭТАП 2: Если регулярки не дали результатов, пробуем использовать raw значения
+        for values in [model_values, alt_model_values]:
+            if values:  # Берем первое непустое значение
+                self.model = process_model(values[0])
+                if self.model:
+                    return self.model
+
+        # Если ничего не найдено
         raise Error("Model is undefined")
 
     def get_serial_number(self):
@@ -307,7 +319,7 @@ class SNMPDevice:
                 ip_address=ip_addresses[i],
                 mask=masks[i],
                 index=index,
-                name=name[0] if name else None,
+                name=name[0] if name else f"{index}SVI",  # Generate a name based on index
                 MTU=MTU[0] if MTU else None,
                 MAC=MAC[0] if MAC else None,
                 type='virtual',

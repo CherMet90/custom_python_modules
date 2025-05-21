@@ -5,7 +5,7 @@
 4. Проверяем что *requirements* проекта содержит: `-e ../custom_python_modules`  
 5. На Windows выполняем в CMD (не PS!)
 ```
-python3.12.0 -m venv venv       # Создаем виртуальное окружение
+py -V:3.12 -m venv venv       # Создаем виртуальное окружение
 venv\Scripts\activate.bat       # Проваливаемся в окружение (bat для windows, без bat - для linux)
 pip install -r requirements.txt # Устанавливаем библиотеки
 ```  
