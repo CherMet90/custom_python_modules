@@ -3,3 +3,5 @@ snmp_module/oid/__pycache__/
 custom_modules/__pycache__/
 app.log
 .vscode/launch.json
+custom_modules/oid/__pycache__/
+.reygpt-mask.yml

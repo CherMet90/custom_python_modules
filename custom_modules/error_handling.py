@@ -14,8 +14,8 @@ def print_errors():
     
     # Print errors in a PrettyTable
     if merged_error_messages:
-        table = PrettyTable(["IP", "Error"])
-        table.align["IP"] = "l"
+        table = PrettyTable(["Device", "Error"])
+        table.align["Device"] = "l"
         table.align["Error"] = "l"
         table.max_width = 75
         table.valign["Error"] = "t"

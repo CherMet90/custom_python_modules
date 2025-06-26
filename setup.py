@@ -7,7 +7,7 @@ setuptools.setup(
     name='custom-modules',
  
     # Project Version
-    version='1.0.1',
+    version='1.1.0',
      
     # Website for your Project or Github repo
     url="https://github.com/CherMet90/custom_python_modules",
