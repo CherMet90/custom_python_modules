@@ -64,12 +64,13 @@ class SNMPDevice:
 
         return cls.__indexes_to_dict(table_data)
 
-    def __init__(self, ip_address, community_string, arp_table=None, version='2c'):
+    def __init__(self, ip_address, community_string, arp_table=None, version='2c', model_oid=None):
         self.community_string = community_string
         self.ip_address = ip_address
         self.arp_table = arp_table
         self.model_family = None
         self.version = version
+        self.model_oid = model_oid
 
         self.model_families = {
             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
@@ -118,7 +119,7 @@ class SNMPDevice:
                     lambda re_out: re_out.group(1)
                 ),
                 'DotSplit': RegexAction(
-                    r'"([A-Za-z0-9\-_\-]+)(\\n)?\b',
+                    r'"([A-Za-z0-9\-_\- ]+)(\\n)?\b',
                     lambda re_out: re_out.group(1)
                 ),
                 'IP': RegexAction(
@@ -243,7 +244,7 @@ class SNMPDevice:
             return model
 
         logger.info('Getting model from SNMP...')
-        model, model_alternative = general.model, general.alt_model 
+
         regex_patterns = {
             'regexp_apc': r'MN:(\S+)',
             'regexp6': r'(\b[A-Z][A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b)',
@@ -257,32 +258,47 @@ class SNMPDevice:
             "USW-XG", "IOS", "IE1000", "VMware", "C1000", "C2960L", "C2960RX", "C2960X", "C9300"
         ]
 
-        # Получаем и очищаем значения для обоих OID
-        model_values = [v for v in (self.snmpwalk(model) or []) if v and v.strip()]
-        alt_model_values = [v for v in (self.snmpwalk(model_alternative) or []) if v and v.strip()]
+        # Если указан конкретный OID, используем только его
+        if hasattr(self, 'model_oid') and self.model_oid:
+            target_oid = getattr(general, self.model_oid)
+            model_values = [v for v in (self.snmpwalk(target_oid) or []) if v and v.strip()]
+            sources = [model_values] if model_values else []
+        else:
+            # Иначе используем все доступные OID в порядке приоритета
+            model_values = [v for v in (self.snmpwalk(general.model) or []) if v and v.strip()]
+            alt_model_values = [v for v in (self.snmpwalk(general.alt_model) or []) if v and v.strip()]
+            alt_model_values2 = [v for v in (self.snmpwalk(general.alt_model2) or []) if v and v.strip()]
+            sources = [model_values, alt_model_values, alt_model_values2]
 
-        # ЭТАП 1: Поиск по регулярным выражениям для обоих OID
-        for values in [model_values, alt_model_values]:
+        # Вспомогательные функции
+        def _search_by_regex(strings):
+            for value in strings:
+                for regex in regex_patterns.values():
+                    for match in re.findall(regex, value):
+                        if match not in ignore_patterns:
+                            return process_model(match)
+            return None
+
+        def _first_raw(strings):
+            return process_model(strings[0]) if strings else None
+
+        # ЭТАП 1: Поиск по регулярным выражениям
+        for values in sources:
             if not values:
                 continue
-            
-            for value in values:
-                for regex in regex_patterns.values():
-                    matches = re.findall(regex, value)
-                    for match in matches:
-                        if match not in ignore_patterns:
-                            self.model = process_model(match)
-                            if self.model:
-                                return self.model
+            model = _search_by_regex(values)
+            if model:
+                self.model = model
+                return self.model
 
-        # ЭТАП 2: Если регулярки не дали результатов, пробуем использовать raw значения
-        for values in [model_values, alt_model_values]:
-            if values:  # Берем первое непустое значение
-                self.model = process_model(values[0])
-                if self.model:
+        # ЭТАП 2: Использование raw значений
+        for values in sources:
+            if values:
+                model = _first_raw(values)
+                if model:
+                    self.model = model
                     return self.model
 
-        # Если ничего не найдено
         raise Error("Model is undefined")
 
     def get_serial_number(self):

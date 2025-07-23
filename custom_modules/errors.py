@@ -17,6 +17,7 @@ class Error(Exception):
 
 
 class NonCriticalError(Error):
+    error_messages = []  # отдельное хранилище для NonCriticalError
     def __init__(self, message, ip=None, calling_function=None):
         if calling_function is not None:
             message = f"{calling_function} failed: {message}"

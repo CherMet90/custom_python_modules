@@ -3,24 +3,29 @@ from prettytable import PrettyTable
 from custom_modules.errors import Error, NonCriticalError
 from custom_modules.log import logger
 
+
+def _pretty_table(data: dict, header: str) -> PrettyTable:
+    """Возвращает отформатированную таблицу по словарю {device: message}."""
+    tbl = PrettyTable(["Device", header])
+    tbl.align["Device"] = "l"
+    tbl.align[header] = "l"
+    tbl.max_width = 75
+    tbl.valign[header] = "t"
+    for ip, msg in data.items():
+        tbl.add_row([ip, msg])
+    return tbl
+
 def print_errors():
-    # Merge the error messages into a single list
-    all_error_messages = Error.error_messages + NonCriticalError.error_messages
+    logger.info('The work is completed')
 
-    # Flatten the list of dictionaries into a single dictionary
-    merged_error_messages = {k: v for d in all_error_messages for k, v in d.items()}
+    # кортежи: (список-хранилище, заголовок столбца, метод логгера)
+    groups = [
+        (NonCriticalError.error_messages, "Non-Critical Error", logger.warning),
+        (Error.error_messages,        "Critical Error",     logger.error),
+    ]
 
-    logger.info(f'The work is completed')
-    
-    # Print errors in a PrettyTable
-    if merged_error_messages:
-        table = PrettyTable(["Device", "Error"])
-        table.align["Device"] = "l"
-        table.align["Error"] = "l"
-        table.max_width = 75
-        table.valign["Error"] = "t"
-
-        for ip, error_message in merged_error_messages.items():
-            table.add_row([ip, error_message])
-
-        logger.error(f'\n{table}')
+    for storage, column_header, log_method in groups:
+        if not storage:
+            continue                               # ничего выводить
+        flat = {k: v for d in storage for k, v in d.items()}
+        log_method("\n%s", _pretty_table(flat, column_header))

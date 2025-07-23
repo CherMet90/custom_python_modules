@@ -5,3 +5,4 @@ app.log
 .vscode/launch.json
 custom_modules/oid/__pycache__/
 .reygpt-mask.yml
+custom_modules/.env
