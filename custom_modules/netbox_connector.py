@@ -4,6 +4,7 @@ import os
 import re
 import traceback
 
+from dotenv import load_dotenv
 import pynetbox
 from colorama import init
 from transliterate import translit, get_available_language_codes
@@ -14,6 +15,8 @@ from custom_modules.log import logger
 # Initialize Colorama
 init()
 
+# Загружаем .env файл
+load_dotenv()
 
 class NetboxDevice:
     # Получение переменных окружения

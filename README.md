@@ -21,3 +21,4 @@ pip install -r requirements.txt # Устанавливаем библиотек�
 - **netbox_connector**: `NETBOX_URL`, `NETBOX_TOKEN`
 - **prtg_connector**: `PRTG_URL`, `PRTG_API_TOKEN`, `PRTG_VERIFY_SSL`
 - **pfsense**: `PFSENSE_LOGIN`, `PFSENSE_PASSWORD`
+- **gitlab_connector**: `GITLAB_URL`, `GITLAB_PRIVATE_TOKEN`

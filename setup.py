@@ -25,6 +25,8 @@ setuptools.setup(
     'transliterate==1.10.2',
     'ratelimit==2.2.1',
     'backoff==2.2.1',
+    'python-gitlab==6.2.0',
+    'python-dotenv==1.0.0'
     ],
  
 )

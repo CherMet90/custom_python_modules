@@ -1,9 +1,12 @@
 import os
 
+from dotenv import load_dotenv
 import paramiko
 
 from custom_modules.log import logger
 from custom_modules.errors import Error, NonCriticalError
+
+load_dotenv()
 
 def download_config(device):
     ip = device.primary_ip.address.split('/')[0]
