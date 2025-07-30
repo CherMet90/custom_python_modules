@@ -22,3 +22,6 @@ pip install -r requirements.txt # Устанавливаем библиотек�
 - **prtg_connector**: `PRTG_URL`, `PRTG_API_TOKEN`, `PRTG_VERIFY_SSL`
 - **pfsense**: `PFSENSE_LOGIN`, `PFSENSE_PASSWORD`
 - **gitlab_connector**: `GITLAB_URL`, `GITLAB_PRIVATE_TOKEN`
+
+#### Documentation
+Для детальной документации по модулям см. [docs/index.md](docs/index.md).
