@@ -1,5 +1,6 @@
 from custom_modules.color_printer import print_red, print_yellow
-
+from custom_modules.error_aggregator import ErrorAggregator
+AGG = ErrorAggregator()  # Singleton
 
 class Error(Exception):
     error_messages = []
@@ -13,6 +14,7 @@ class Error(Exception):
 
     @classmethod
     def store_error(cls, ip, message):
+        AGG.add("critical", ip, str(message))
         cls.error_messages.append({ip: str(message)})
 
 

@@ -177,6 +177,11 @@ class SNMPDevice:
                     lambda re_out: re_out.group(
                         1).strip().replace(" ", ':').upper()
                 ),
+                'LLDP-IP': RegexAction(
+                    #  ...<TimeMark>.<PortNum>.<RemIndex>.<Subtype>.<a.b.c.d> =
+                    r'\.\d+\.([0-9]+)\.[0-9]+\.1.4.(\d+\.\d+\.\d+\.\d+)\s+=',
+                    lambda m: [m.group(1), m.group(2)]
+                ),
                 'DEFAULT': RegexAction(
                     r'"([^"]*)"',
                     lambda re_out: re_out.group(1)
@@ -408,6 +413,7 @@ class SNMPDevice:
             general.si_description, 'INDEX-DESC-HEX', hex_output=True)
         lldp_loc_port_dict = get_snmp_data(
             general.lldp_loc_port, 'INDEX-DESC')
+        lldp_rem_ip_lp_dict = self.__get_lldp_rem_ip_dict()   # key = localPortNum
         lldp_rem_name_dict = get_snmp_data(
             general.lldp_rem_name, 'PREINDEX-DESC')
 
@@ -421,6 +427,8 @@ class SNMPDevice:
             general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
         lldp_rem_mac_by_index = get_lldp_data_by_index(
             int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
+        lldp_rem_ip_by_index = get_lldp_data_by_index(
+                int_name_dict, lldp_loc_port_dict, lldp_rem_ip_lp_dict)
         
         if self.model_family:
             get_interfaces_func = self.model_families.get(self.model_family)
@@ -450,9 +458,16 @@ class SNMPDevice:
             lldp_rem_mac = lldp_rem_mac_by_index.get(
                 interface.index, '').replace(" ", ':').upper()
             lldp_rem_port = lldp_rem_port_by_index.get(interface.index)
+
+            # через ARP-таблицу
             if self.arp_table:
                 interface.rem_ip = next(
-                    (key for key, value in self.arp_table.items() if value == lldp_rem_mac), None)
+                    (ip for ip, mac in self.arp_table.items() if mac == lldp_rem_mac),
+                    None
+                )
+            # прямое LLDP
+            if interface.rem_ip is None:
+                interface.rem_ip = lldp_rem_ip_by_index.get(interface.index)
 
             interface.lldp_rem = {
                 "name": lldp_rem_name,
@@ -632,4 +647,36 @@ class SNMPDevice:
         if (len(tagged) == 1 and tagged[0] == untagged) or not tagged:
             mode = 'tagged-all'
         return Interface(index=index, untagged=untagged, mode=mode, tagged=tagged)
+
+    def __get_lldp_rem_ip_dict(self):
+        """
+        Возвращает dict {localPortNum: ip} c LLDP-таблицы удалённых mgmt-адресов.
+        В случае ошибки – пустой dict.
+        """
+        try:
+            rows = self.snmpwalk(general.lldp_rem_man_addr, 'LLDP-IP')
+            if self.model_family == 'cisco_catalyst':
+                return {port: ip for port, ip in rows}
+            else:
+                return self.__indexes_to_dict(rows)          # key = localPortNum
+        except NonCriticalError as e:
+            NonCriticalError.store_error(self.ip_address, str(e))
+            return {}
+
+    # def __get_lldp_rem_ip_dict(self, int_name_dict=None):
+    #     """
+    #     Возвращает { ifIndex : ip }.
+    #     Для Catalyst выполняет доп. преобразование «port-num → ifIndex».
+    #     """
+    #     try:
+    #         raw = self.snmpwalk(general.lldp_rem_man_addr, 'LLDP-RAW')
+    #         # raw -> [['23','10.10.13.5'], ...]
+    #         if self.model_family == 'cisco_catalyst':
+    #             return self._lldp_ip_dict_catalyst(raw, int_name_dict or {})
+    #         else:
+    #             # здесь PortNum уже совпадает с ifIndex
+    #             return {port: ip for port, ip in raw}
+    #     except NonCriticalError as e:
+    #         NonCriticalError.store_error(self.ip_address, str(e))
+    #         return {}
 # ========================================================================

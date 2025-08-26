@@ -7,3 +7,4 @@ custom_modules/oid/__pycache__/
 .reygpt-mask.yml
 custom_modules/.env
 .vscode/settings.json
+custom_modules/tasks/__pycache__/*.pyc

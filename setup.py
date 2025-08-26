@@ -8,7 +8,7 @@ setuptools.setup(
     name='custom-modules',
 
     # Project Version
-    version='1.3.2',
+    version='1.4.0',
 
     # Website for your Project or Github repo
     url="https://github.com/CherMet90/custom_python_modules",
@@ -27,6 +27,10 @@ setuptools.setup(
         'ratelimit==2.2.1',
         'backoff==2.2.1',
         'python-gitlab==6.2.0',
-        'python-dotenv==1.0.0'
+        'python-dotenv==1.0.0',
+        'nornir==3.5.0',
+        'nornir-netmiko==1.0.1',
+        'nornir-utils==0.2.0',
+        'nornir_salt==0.22.5'
     ],
 )
