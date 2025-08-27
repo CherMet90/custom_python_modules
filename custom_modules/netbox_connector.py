@@ -51,6 +51,9 @@ class NetboxDevice:
     @classmethod
     def get_vlans(cls, site_slug):
         try:
+            # Валидация входного параметра
+            cls._ensure_not_empty(site_slug, 'site_slug', ctx='get_vlans')
+
             vlans = list(
                 cls.netbox_connection.ipam.vlans.filter(site=site_slug))
             # Extract VLAN IDs from the objects
@@ -65,7 +68,9 @@ class NetboxDevice:
 
     @classmethod
     def get_netbox_ip(cls, ip_with_prefix, create=True):
-        logger.info(f'Getting IP object from NetBox...')
+        cls._ensure_not_empty(ip_with_prefix, 'ip_with_prefix', ctx='get_netbox_ip')
+
+        logger.info('Getting IP object from NetBox…')
         netbox_ip = cls.netbox_connection.ipam.ip_addresses.get(
             address=ip_with_prefix,
         )
@@ -100,8 +105,13 @@ class NetboxDevice:
         raise Error("IP address not found in NetBox prefixes", ip_addr)
     
     @classmethod
-    def create_ip_address(cls, ip, ip_with_prefix, status='active', description='', dns_name=''):
-        logger.debug(f'Checking if IP address {ip_with_prefix} exists...')
+    def create_ip_address(cls, ip, ip_with_prefix, status='active',
+                          description='', dns_name=''):
+        cls._ensure_not_empty(ip, 'ip', ctx='create_ip_address')
+        cls._ensure_not_empty(ip_with_prefix, 'ip_with_prefix',
+                              ctx='create_ip_address')
+    
+        logger.debug(f'Checking if IP address {ip_with_prefix} exists…')
         existing_ips = cls.netbox_connection.ipam.ip_addresses.filter(address=ip)
         if existing_ips:
             logger.debug(
@@ -137,23 +147,41 @@ class NetboxDevice:
 
     @classmethod
     def get_vms_by_role(cls, role):
+        # Валидация входного параметра
+        if not role or not hasattr(role, 'id'):
+            raise Error("get_vms_by_role: parameter 'role' is empty or invalid – "
+                        "запрос был прерван, чтобы не получить все объекты")
+
         return cls.netbox_connection.virtualization.virtual_machines.filter(
-                role_id=role.id
-            )
+            role_id=role.id
+        )
 
     @classmethod
     def get_services_by_vm(cls, vm):
+        # Валидация входного параметра
+        if not vm or not hasattr(vm, 'name') or not vm.name.strip():
+            raise Error("get_services_by_vm: parameter 'vm' is empty or invalid – "
+                        "запрос был прерван, чтобы не получить все объекты")
+
         return cls.netbox_connection.ipam.services.filter(
             virtual_machine=vm.name
         )
 
     @classmethod
     def remove_ip_range(cls, start_ip, end_ip):
+        # Валидация входных параметров
+        cls._ensure_not_empty(start_ip, 'start_ip', ctx='remove_ip_range')
+        cls._ensure_not_empty(end_ip, 'end_ip', ctx='remove_ip_range')
+
         start_ip = ipaddress.IPv4Address(start_ip)
         end_ip = ipaddress.IPv4Address(end_ip)
         ip_list = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_ip), int(end_ip) + 1)]
+
         for ip in ip_list:
             ip_no_prefix = ip.split('/')[0]
+            # Валидируем IP перед запросом
+            cls._ensure_not_empty(ip_no_prefix, 'ip_no_prefix', ctx='remove_ip_range filter')
+
             ip_obj = list(cls.netbox_connection.ipam.ip_addresses.filter(address=ip_no_prefix))
             if len(ip_obj) == 1:
                 if ip_obj[0].assigned_object or ip_obj[0].dns_name:
@@ -164,26 +192,26 @@ class NetboxDevice:
                 else:
                     ip_obj[0].delete()
                     logger.debug(f'{ip_no_prefix} deleted')
-    
+
     @classmethod
     def get_netbox_objects(cls, *path_segments, action=None, **search_params):
+        # ↓ фильтруем и валидируем входные параметры
+        clean_params = {}
+        for k, v in search_params.items():
+            if v is not None and str(v).strip():
+                clean_params[k] = v
+            else:
+                raise Error(f"get_netbox_objects: parameter '{k}' is empty – "
+                            "запрос был прерван, чтобы не получить все объекты")
+
+        # … далее используем clean_params …
         netbox_api = cls.netbox_connection
-        # Flatten out dot-delimited string segments into individual segments
-        segments = []
-        for segment in path_segments:
-            segments.extend(segment.split('.'))
-        # Traverse the pynetbox API segments
-        for segment in segments:
+        for segment in '.'.join(path_segments).split('.'):
             netbox_api = getattr(netbox_api, segment)
+
         if action:
-            method = getattr(netbox_api, action)
-            try:
-                return method(**search_params)
-            except Exception as e:
-                Error(f"Failed to {action} NetBox object: {e}")
-                return None
-        else:
-            raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
+            return getattr(netbox_api, action)(**clean_params)
+        raise ValueError("Action (e.g. 'get', 'filter') must be specified.")
 
     @classmethod
     def update_ip_address(cls, ip_address, **kwargs):
@@ -214,6 +242,17 @@ class NetboxDevice:
         except Exception as e:
             logger.error(f'Error updating IP {ip_address} in Netbox: {e}')
             return False
+
+    @staticmethod
+    def _ensure_not_empty(value, param_name, ctx='NetBox query'):
+        """
+        Гарантирует непустое значение параметра фильтрации.
+        Если значение пустое/None/пустая строка – бросает Error.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise Error(f"{ctx}: parameter '{param_name}' is empty – "
+                        "запрос вернёт все объекты и может привести к порче данных")
+        return value
 
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster_name=None, cluster_type=None, status='active', vcpus=None, mem=None, description=None) -> None:
@@ -270,6 +309,8 @@ class NetboxDevice:
         return self._change_state
 
     def __create_or_update_netbox_vm(self):
+        self._ensure_not_empty(self.hostname, 'hostname',
+                               ctx='__create_or_update_netbox_vm')
         # Получение списка ВМ по имени (без учета регистра) из Netbox
         vms = self.netbox_connection.virtualization.virtual_machines.filter(
             name=self.hostname
@@ -341,9 +382,12 @@ class NetboxDevice:
         return self.__netbox_device
     
     def __get_netbox_device(self):
-        device = self.netbox_connection.dcim.devices.get(
-            name=self.hostname, site=self.__site_slug)
-        return device
+        self._ensure_not_empty(self.hostname, 'hostname', ctx='__get_netbox_device')
+        self._ensure_not_empty(self.__site_slug, 'site_slug',
+                               ctx='__get_netbox_device')
+        return self.netbox_connection.dcim.devices.get(
+            name=self.hostname, site=self.__site_slug
+        )
 
     def __check_serial_number(self):
         if self.__serial_number and hasattr(self.__netbox_device, 'serial') and self.__netbox_device.serial != self.__serial_number:
@@ -429,15 +473,24 @@ class NetboxDevice:
         """
         if not self.__netbox_device:
             raise Error("NetBox device not defined. Cannot delete interfaces.")
-
+    
+        # Валидация device ID
+        if not hasattr(self.__netbox_device, 'id') or not self.__netbox_device.id:
+            raise Error("delete_interfaces: NetBox device ID is empty – "
+                        "запрос был прерван, чтобы не получить все объекты")
+    
         logger.info(f"Deleting all interfaces for device {self.__netbox_device.name}...")
-
+    
         # Получаем все интерфейсы устройства
         if self.__vm:
-            interfaces = self.netbox_connection.virtualization.interfaces.filter(virtual_machine_id=self.__netbox_device.id)
+            interfaces = self.netbox_connection.virtualization.interfaces.filter(
+                virtual_machine_id=self.__netbox_device.id
+            )
         else:
-            interfaces = self.netbox_connection.dcim.interfaces.filter(device_id=self.__netbox_device.id)
-
+            interfaces = self.netbox_connection.dcim.interfaces.filter(
+                device_id=self.__netbox_device.id
+            )
+    
         for interface in interfaces:
             if interface.count_ipaddresses == 0:
                 logger.debug(f"Deleting interface {interface.name}...")
@@ -448,7 +501,7 @@ class NetboxDevice:
                     NonCriticalError(error_message, interface.name, self.delete_interfaces.__name__)
             else:
                 logger.debug(f"Skipping interface {interface.name} as it has associated IP addresses.")
-
+    
         logger.info(f"All unused interfaces for device {self.__netbox_device.name} have been deleted.")
 
     def add_interface(self, interface):
@@ -480,6 +533,8 @@ class NetboxDevice:
 
     def __create_ip_address(self, interface, ip_with_prefix):
         try:
+            self._ensure_not_empty(ip_with_prefix, 'ip_with_prefix',
+                                   ctx='__create_ip_address')
             def handle_existing_ip(existing_ip):
                 # Проверяем совпадает ли префикс у найденного в NetBox ip-адреса
                 if existing_ip.address == ip_with_prefix:
