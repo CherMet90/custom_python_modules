@@ -34,6 +34,12 @@ class ErrorAggregator:
         self._pretty_print()
         self._dump_json()
 
+    def _truncate_message(self, message: str, max_length: int = 200) -> str:
+        """Обрезает длинные сообщения для читаемого вывода в таблице."""
+        if len(message) > max_length:
+            return message[:max_length] + "... [truncated]"
+        return message
+
     def _pretty_print(self):
         # [Implementation as in proposal]
         tbl = PrettyTable(["Metric", "Value"])
@@ -44,10 +50,23 @@ class ErrorAggregator:
         for cat, data in self._errors.items():
             if not data:
                 continue
-            subtbl = PrettyTable(["Device", f"{cat.title()} Error"])
+            col_name = f"{cat.title()} Error"
+            subtbl = PrettyTable(["Device", col_name])
+            subtbl.align["Device"] = "l"
+            subtbl.align[f"{cat.title()} Error"] = "l"
+            subtbl.max_width = 75
+            subtbl.valign[f"{cat.title()} Error"] = "t"
+
             for ip, msg in data.items():
-                subtbl.add_row([ip, msg])
-            logger.warning("\n%s ERRORS:\n%s", cat.upper(), subtbl)
+                truncated_msg = self._truncate_message(msg)
+                subtbl.add_row([ip, truncated_msg])
+
+                # Логируем полное сообщение только если оно было обрезано
+                if len(msg) > 200:
+                    logger.debug(f"Full {cat} error for {ip}: {msg}")
+
+            log_method = logger.error if cat == "critical" else logger.warning
+            log_method("\n%s ERRORS:\n%s", cat.upper(), subtbl)
 
     def _dump_json(self):
         summary = {"stats": dict(self._stats), "errors": dict(self._errors)}
