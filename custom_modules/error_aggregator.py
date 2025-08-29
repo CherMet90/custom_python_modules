@@ -71,3 +71,42 @@ class ErrorAggregator:
     def _dump_json(self):
         summary = {"stats": dict(self._stats), "errors": dict(self._errors)}
         Path("error_summary.json").write_text(json.dumps(summary, indent=2))
+
+    def get_errors(self, category: str = None) -> dict:
+        """
+        Получить ошибки по категории или все.
+
+        Args:
+            category (str, optional): 'critical' или 'non_critical'. 
+                                    Если None, возвращает все категории.
+
+        Returns:
+            dict: {ip: message} для указанной категории или 
+                  {category: {ip: message}} для всех категорий
+        """
+        if category:
+            return dict(self._errors.get(category, {}))
+        return {cat: dict(errs) for cat, errs in self._errors.items()}
+
+    def get_stats(self) -> dict:
+        """
+        Получить статистики выполнения.
+
+        Returns:
+            dict: Копия статистик {metric: value}
+        """
+        return dict(self._stats)
+
+    def has_errors(self, category: str = None) -> bool:
+        """
+        Проверить наличие ошибок.
+
+        Args:
+            category (str, optional): Категория для проверки
+
+        Returns:
+            bool: True если есть ошибки
+        """
+        if category:
+            return bool(self._errors.get(category))
+        return any(self._errors.values())
